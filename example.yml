@@ -1,0 +1,26 @@
+---
+- hosts: localhost
+  tasks:
+  - name: Create a host in Foreman
+    foremanhost:
+      name: foobar
+      hostgroup: Medium/jenkins/blue
+      state: present
+      json: "{{ lookup('template', 'example.json') }}"
+      api_user: foreman
+      api_password: changeme
+      api_url: https://127.0.0.1
+      ssl_verify: False
+    register: result
+
+  - debug:
+      msg: Got "{{ result }}"
+
+  - name: Delete a host in Foreman
+    foremanhost:
+      name: foobar.example.com
+      state: absent
+      api_user: foreman
+      api_password: changeme
+      api_url: https://127.0.0.1
+      ssl_verify: False
