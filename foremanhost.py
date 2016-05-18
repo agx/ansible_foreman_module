@@ -370,9 +370,11 @@ def core(module):
                 hid = item_to_id(host_url, 'name', name)
             else:
                 try:
-                    module.fail_json(
-                        msg='Failed to create host %s: %s' % (name, e.response.json()['error']['full_messages'])
-                    )
+                    if 'full_messages' in e.response.json()['error']:
+                        msg = 'Failed to create host %s: %s' % (name, e.response.json()['error']['full_messages'])
+                    else:
+                        msg = 'Failed to create host %s: %s' % (name, e.response.json()['error'])
+                    module.fail_json(msg=msg)
                 # Catch any failures to get an error message
                 except Exception as f:
                     module.fail_json(
