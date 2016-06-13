@@ -4,8 +4,7 @@ Usage:
 
     ansible-playbook --module-path . -c local -i localhost, example.yml
 
-The file example.yml has an example. You can augment this with a
-custom json template for parameters that aren't configurable (yet).
+The file example.yml has an example. 
 
 Simple example:
 

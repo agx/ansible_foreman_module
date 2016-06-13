@@ -16,7 +16,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 DOCUMENTATION = '''
 ---
 module: foremanhost
-short_description: Manages virtual machines in Foreman
+short_description: Manages virtual machines supported in the Foreman
 description:
      - Manages virtual machines in the I(Foreman).
 options:
@@ -32,7 +32,10 @@ options:
     default: null
   subnet:
     description:
-      - put the machine into the given subnet
+      - put the machint into the given subnet
+  ipv4addr:
+    description:
+      - assign the given address to the VM
   api_url:
     description:
       - foreman connection url
@@ -48,15 +51,11 @@ options:
     required: false
   state:
     description:
-      - state of the machine (e.g.'present')
+      - state of the machine ('present' or 'absent')
     required: true
   ssl_verify:
     description:
       - Wether to verify SSL certs of the Foreman API
-    required: false
-  json:
-    description:
-      - additional JSON used to define the machine
     required: false
     default: {}
 author:
@@ -73,14 +72,13 @@ tasks:
       name: foobar
       subnet: asubnet
       state: present
-      json: "{{ lookup('template', 'example.json') }}"
       api_user: foreman
       api_password: admin
       api_url: http://localhost:3000/
 '''
 
 import os
-import copy
+import json
 
 from ansible.module_utils.basic import *
 
@@ -96,12 +94,35 @@ FOREMAN_FAILED = 1
 FOREMAN_SUCCESS = 0
 
 
-def merge_json(name, hostgroup_id, image_id, compute_resource_id, subnet_id, customjson):
-    if customjson:
-        customdata = json.loads(customjson)
-    ret = copy.deepcopy(customdata)
-    if not ret.has_key('host'):
-        ret['host'] = {}
+def build_primary_interface(ipv4addr):
+    """
+    Build a Foreman interface definition
+
+    >>> build_primary_interface('127.0.0.1')
+    {'0': {'ip': '127.0.0.1', 'provision': True, 'primary': True}}
+    """
+    if not ipv4addr:
+        return None
+
+    iface = {
+        "ip": ipv4addr,
+        "primary": True,
+        "provision": True,
+    }
+    return {'0': iface}
+
+
+def merge_json(name, hostgroup_id, image_id, compute_resource_id, subnet_id, interfaces):
+    ret = {}
+
+    ret['host'] = {
+        "build":   True,
+        "enabled": True,
+        "managed": True,
+        "compute_attributes": {
+            "start": "1"
+        },
+    }
     ret['host']['name'] = name
     ret['host']['hostgroup_id'] = int(hostgroup_id)
     if image_id:
@@ -110,6 +131,8 @@ def merge_json(name, hostgroup_id, image_id, compute_resource_id, subnet_id, cus
     ret['host']['compute_resource_id'] = int(compute_resource_id)
     if subnet_id:
         ret['host']['subnet_id'] = subnet_id
+    if interfaces:
+        ret['host']['interfaces_attributes'] = interfaces
     return ret
 
 
@@ -298,7 +321,7 @@ def ensure_params(hid, parameters):
     changed = False
 
     add_params = set(new) - set(old)
-    del_params  = set(old) - set(new)
+    del_params = set(old) - set(new)
     mod_params = set(new).intersection(old)
 
     for name in add_params:
@@ -329,8 +352,8 @@ def core(module):
     compute_resource = module.params.get('compute_resource', None)
     subnetname = module.params.get('subnet', None)
     state = module.params.get('state', 'present')
-    customjson = module.params.get('json', None)
-    parameters = module.params.get('params', [])
+    parameters = module.params.get('params') or {}
+    ipv4addr = module.params.get('ipv4addr', None)
     api_url = module.params.get('api_url', None)
     api_user = module.params.get('api_user', None)
     api_pw = module.params.get('api_password', os.getenv("ANSIBLE_FOREMAN_PW"))
@@ -348,6 +371,8 @@ def core(module):
 
     if state == 'present':
         hostgroup_url = "%s/api/v2/hostgroups" % api_url
+        if not hostgroup:
+            raise ValueError("Hostgroup must be given")
         hostgroup_id = item_to_id(hostgroup_url, 'title', hostgroup)
         if not hostgroup_id:
             raise ValueError("Hostgroup '%s' not found for '%s'" % (hostgroup, name))
@@ -355,12 +380,13 @@ def core(module):
         if image:
             image_id = find_image(compute_resource_id, image)
         subnet = find_subnet(subnetname)
+        interfaces = build_primary_interface(ipv4addr)
         fulljson = merge_json(name,
                               hostgroup_id,
                               image_id,
                               compute_resource_id,
                               subnet['id'],
-                              customjson)
+                              interfaces)
         try:
             ret = do_post(host_url, fulljson, headers)
             hid = json.loads(ret['text'])['id']
@@ -421,7 +447,7 @@ def main():
         compute_resource = dict(type='str'),
         subnet = dict(type='str'),
         params = dict(type='dict'),
-        json = dict(),
+        ipv4addr = dict(type='str'),
         state = dict(default='present', choices=['present','absent']),
         api_url = dict(required=True),
         api_user = dict(required=True),
