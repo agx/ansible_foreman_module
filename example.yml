@@ -5,8 +5,9 @@
     foremanhost:
       name: foobar
       hostgroup: Medium/jenkins/blue
+      compute_resource: libvirt
       state: present
-      json: "{{ lookup('template', 'example.json') }}"
+      image: Jessie
       api_user: foreman
       api_password: changeme
       api_url: https://127.0.0.1

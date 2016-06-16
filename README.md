@@ -1,14 +1,13 @@
-A simple module to create hosts in [the Foreman][] via [Ansible][]
+A simple module to create image based VMs in [the Foreman][] via [Ansible][]
+
+For setting up Foreman itself check out the excellent [ansible-module-foreman][].
 
 Usage:
 
     ansible-playbook --module-path . -c local -i localhost, example.yml
 
-The file example.yml has an example. 
-
-Simple example:
-
-    - foremanhost: name=foo hostgroup=bar state=present api_user=foreman api_password=changeme api_url: https://127.0.0.1
+The file [example.yml][] has an example.
 
 [the Foreman]: http://theforeman.org
 [Ansible]: http://ansible.com
+[ansible-module-foreman]: https://github.com/Nosmoht/ansible-module-foreman
