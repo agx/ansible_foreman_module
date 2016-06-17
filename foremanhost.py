@@ -373,6 +373,10 @@ def core(module):
         hostgroup_url = "%s/api/v2/hostgroups" % api_url
         if not hostgroup:
             raise ValueError("Hostgroup must be given")
+        if not compute_resource:
+            raise ValueError("Compute resource must be given")
+        if not subnetname:
+            raise ValueError("subnet must be given")
         hostgroup_id = item_to_id(hostgroup_url, 'title', hostgroup)
         if not hostgroup_id:
             raise ValueError("Hostgroup '%s' not found for '%s'" % (hostgroup, name))
