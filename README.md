@@ -6,7 +6,7 @@ Usage:
 
     ansible-playbook --module-path . -c local -i localhost, example.yml
 
-The file [example.yml][] has an example.
+The file [example.yml](./example.yml) has an example.
 
 [the Foreman]: http://theforeman.org
 [Ansible]: http://ansible.com

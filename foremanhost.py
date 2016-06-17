@@ -361,6 +361,7 @@ def core(module):
     image_id = None
     subnet = None
     changed = False
+    facts = {}
     ret = {}
 
     host_url = "%s/api/v2/hosts" % api_url
@@ -393,7 +394,9 @@ def core(module):
                               interfaces)
         try:
             ret = do_post(host_url, fulljson, headers)
-            hid = json.loads(ret['text'])['id']
+            j = json.loads(ret['text'])
+            hid = j['id']
+            facts['foremanhost_ip'] = j['ip']
             changed = True
         except requests.exceptions.HTTPError as e:
             if is_exists(e):
@@ -440,6 +443,8 @@ def core(module):
         raise ValueError("Unknown state %s" % state)
 
     ret['changed'] = changed
+    if facts:
+        ret['ansible_facts'] = facts
     return FOREMAN_SUCCESS, ret
 
 
