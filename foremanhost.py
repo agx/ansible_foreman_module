@@ -451,7 +451,7 @@ def main():
         state = dict(default='present', choices=['present','absent']),
         api_url = dict(required=True),
         api_user = dict(required=True),
-        api_password = dict(),
+        api_password = dict(no_log=True),
         ssl_verify = dict(),
     ))
 
