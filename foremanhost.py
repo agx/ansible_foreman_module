@@ -36,6 +36,9 @@ options:
   ipv4addr:
     description:
       - assign the given address to the VM
+  comment:
+    description:
+      - Comment to attach to the VM
   api_url:
     description:
       - foreman connection url
@@ -112,7 +115,7 @@ def build_primary_interface(ipv4addr):
     return {'0': iface}
 
 
-def merge_json(name, hostgroup_id, image_id, compute_resource_id, subnet_id, interfaces):
+def merge_json(name, hostgroup_id, image_id, compute_resource_id, subnet_id, interfaces, comment):
     ret = {}
 
     ret['host'] = {
@@ -133,6 +136,8 @@ def merge_json(name, hostgroup_id, image_id, compute_resource_id, subnet_id, int
         ret['host']['subnet_id'] = subnet_id
     if interfaces:
         ret['host']['interfaces_attributes'] = interfaces
+    if comment:
+        ret['host']['comment'] = comment
     return ret
 
 
@@ -354,6 +359,7 @@ def core(module):
     state = module.params.get('state', 'present')
     parameters = module.params.get('params') or {}
     ipv4addr = module.params.get('ipv4addr', None)
+    comment = module.params.get('comment', None)
     api_url = module.params.get('api_url', None)
     api_user = module.params.get('api_user', None)
     api_pw = module.params.get('api_password', os.getenv("ANSIBLE_FOREMAN_PW"))
@@ -391,7 +397,8 @@ def core(module):
                               image_id,
                               compute_resource_id,
                               subnet['id'],
-                              interfaces)
+                              interfaces,
+                              comment=comment)
         try:
             ret = do_post(host_url, fulljson, headers)
             j = json.loads(ret['text'])
@@ -457,6 +464,7 @@ def main():
         subnet = dict(type='str'),
         params = dict(type='dict'),
         ipv4addr = dict(type='str'),
+        comment = dict(type='str'),
         state = dict(default='present', choices=['present','absent']),
         api_url = dict(required=True),
         api_user = dict(required=True),
