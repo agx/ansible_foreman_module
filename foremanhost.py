@@ -88,7 +88,7 @@ from ansible.module_utils.basic import *
 try:
     import requests
 except ImportError:
-    HAS_REQUESTE = False
+    HAS_REQUESTS = False
 else:
     from requests.auth import HTTPBasicAuth
     HAS_REQUESTS = True
