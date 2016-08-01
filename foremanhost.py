@@ -52,6 +52,12 @@ options:
       - foreman connection password (can also be passwed via
         ANSIBLE_FOREMAN_PW)
     required: false
+  api_retries:
+     description:
+      - number of retries if a request fails with a api_error
+  api_errors:
+     description:
+      - List of errors to retry requests for e.g. ['ERF12-1261']
   state:
     description:
       - state of the machine ('present' or 'absent')
@@ -82,6 +88,7 @@ tasks:
 
 import os
 import json
+import time
 
 from ansible.module_utils.basic import *
 
@@ -346,6 +353,41 @@ def ensure_params(hid, parameters):
     return changed
 
 
+def is_error(e, conds):
+    """
+    Check if a Foreman error matches a given error number
+    """
+    if conds is None:
+        return False
+
+    for cond in conds:
+        if (cond in e.response.json()['error'] or
+            ('full_messages' in e.response.json()['error'] and
+             cond in e.response.json()['error']['full_messages'][0])):
+            return True
+    return False
+
+
+def do_post_retries(url, json, headers, conds, retries=0):
+    """
+    Retry posts on certain Foreman error numbers
+    """
+    tries = 0
+    wait = 5
+    while True:
+        try:
+            tries += 1
+            ret = do_post(url, json, headers)
+            ret['api_tries'] = tries
+            return ret
+        except requests.exceptions.HTTPError as e:
+            if is_error(e, conds):
+                if tries-1 < retries:  # still tries left
+                    time.sleep(wait)
+                    wait *= 2
+                    continue
+            raise
+
 
 def core(module):
     global headers
@@ -363,6 +405,8 @@ def core(module):
     api_url = module.params.get('api_url', None)
     api_user = module.params.get('api_user', None)
     api_pw = module.params.get('api_password', os.getenv("ANSIBLE_FOREMAN_PW"))
+    api_retries = module.params.get('api_retries', 0)
+    api_errors = module.params.get('api_errors', None)
     ssl_verify = module.params.get('ssl_verify', True)
     image_id = None
     subnet = None
@@ -400,7 +444,7 @@ def core(module):
                               interfaces,
                               comment=comment)
         try:
-            ret = do_post(host_url, fulljson, headers)
+            ret = do_post_retries(host_url, fulljson, headers, api_errors, api_retries)
             j = json.loads(ret['text'])
             hid = j['id']
             facts['foremanhost_ip'] = j['ip']
@@ -469,6 +513,8 @@ def main():
         api_url = dict(required=True),
         api_user = dict(required=True),
         api_password = dict(no_log=True),
+        api_retries = dict(type='int'),
+        api_errors = dict(type='list'),
         ssl_verify = dict(),
     ))
 
