@@ -39,6 +39,9 @@ options:
   comment:
     description:
       - Comment to attach to the VM
+  environment:
+    description:
+      - Environment to put the vm into
   api_url:
     description:
       - foreman connection url
@@ -122,7 +125,7 @@ def build_primary_interface(ipv4addr):
     return {'0': iface}
 
 
-def merge_json(name, hostgroup_id, image_id, compute_resource_id, subnet_id, interfaces, comment):
+def merge_json(name, hostgroup_id, image_id, compute_resource_id, subnet_id, env_id, interfaces, comment):
     ret = {}
 
     ret['host'] = {
@@ -139,6 +142,8 @@ def merge_json(name, hostgroup_id, image_id, compute_resource_id, subnet_id, int
         ret['host']['image_id'] = int(image_id)
     ret['host']['provision_method'] = "image"
     ret['host']['compute_resource_id'] = int(compute_resource_id)
+    if env_id:
+        ret['host']['environment_id'] = int(env_id)
     if subnet_id:
         ret['host']['subnet_id'] = subnet_id
     if interfaces:
@@ -245,6 +250,14 @@ def find_subnet(name):
     if not subnet:
         raise ValueError("Subnet '%s' not found" % subnet)
     return subnet
+
+
+def find_env(env):
+    env_url = "%s/api/v2/environments/" % api_url
+    env_id = item_to_id(env_url, 'name', env)
+    if not env_id:
+        raise ValueError("Env '%s' not found" % env)
+    return env_id
 
 
 def find_subnet_domains(subnet_id):
@@ -398,6 +411,7 @@ def core(module):
     image = module.params.get('image', None)
     compute_resource = module.params.get('compute_resource', None)
     subnetname = module.params.get('subnet', None)
+    env = module.params.get('environment', None)
     state = module.params.get('state', 'present')
     parameters = module.params.get('params') or {}
     ipv4addr = module.params.get('ipv4addr', None)
@@ -409,6 +423,7 @@ def core(module):
     api_errors = module.params.get('api_errors', None)
     ssl_verify = module.params.get('ssl_verify', True)
     image_id = None
+    env_id = None
     subnet = None
     changed = False
     facts = {}
@@ -434,6 +449,8 @@ def core(module):
         compute_resource_id = find_compute_resource(compute_resource)
         if image:
             image_id = find_image(compute_resource_id, image)
+        if env:
+            env_id = find_env(env)
         subnet = find_subnet(subnetname)
         interfaces = build_primary_interface(ipv4addr)
         fulljson = merge_json(name,
@@ -441,6 +458,7 @@ def core(module):
                               image_id,
                               compute_resource_id,
                               subnet['id'],
+                              env_id,
                               interfaces,
                               comment=comment)
         try:
@@ -506,6 +524,7 @@ def main():
         image = dict(type='str'),
         compute_resource = dict(type='str'),
         subnet = dict(type='str'),
+        environment = dict(type='str'),
         params = dict(type='dict'),
         ipv4addr = dict(type='str'),
         comment = dict(type='str'),
