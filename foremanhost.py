@@ -13,6 +13,12 @@ You should have received a copy of the GNU General Public License
 along with this program.  If not, see <http://www.gnu.org/licenses/>.
 """
 
+import os
+import json
+import time
+
+from ansible.module_utils.basic import *
+
 DOCUMENTATION = '''
 ---
 module: foremanhost
@@ -89,12 +95,6 @@ tasks:
       api_url: http://localhost:3000/
 '''
 
-import os
-import json
-import time
-
-from ansible.module_utils.basic import *
-
 try:
     import requests
 except ImportError:
@@ -105,6 +105,9 @@ else:
 
 FOREMAN_FAILED = 1
 FOREMAN_SUCCESS = 0
+
+headers = None
+api_url = None
 
 
 def build_primary_interface(ipv4addr):
@@ -129,7 +132,7 @@ def merge_json(name, hostgroup_id, image_id, compute_resource_id, subnet_id, env
     ret = {}
 
     ret['host'] = {
-        "build":   True,
+        "build": True,
         "enabled": True,
         "managed": True,
         "compute_attributes": {
@@ -169,7 +172,6 @@ def do_get(url, params):
     return dict(status=ret.status_code, text=ret.text)
 
 
-
 def do_put(url, data, params):
     data = None if data is None else json.dumps(data)
     ret = requests.put(url,
@@ -196,8 +198,8 @@ def is_exists(e):
         err_msg = err["error"]["errors"]
         # Be careful to avoid IndexError so we can rethrow
         # requests exception
-        if (err_msg.has_key("name") and
-            err_msg["name"] == [u'has already been taken']):
+        if ("name" in err_msg and
+                err_msg["name"] == [u'has already been taken']):
             return True
     except IndexError:
         return False
@@ -227,6 +229,7 @@ def find_item(base_url, field, name):
     if len(results) > 1:
         raise ValueError("Found more than item for '%s'" % name)
     return results[0]
+
 
 def find_image(compute_resource_id, image):
     image_url = "%s/api/v2/compute_resources/%s/images" % (api_url, compute_resource_id)
@@ -312,7 +315,7 @@ def add_param(hid, name, value):
     hostparam_url = "%s/api/v2/hosts/%s/parameters" % (api_url, hid)
     p = {
         "parameter": {
-            "name":  name,
+            "name": name,
             "value": value,
         },
     }
@@ -330,7 +333,7 @@ def update_param(hid, name, value, foreman_params):
     hostparam_url = "%s/api/v2/hosts/%s/parameters/%s" % (api_url, hid, param_id)
     p = {
         "parameter": {
-            "name":  name,
+            "name": name,
             "value": value,
         },
     }
@@ -395,7 +398,7 @@ def do_post_retries(url, json, headers, conds, retries=0):
             return ret
         except requests.exceptions.HTTPError as e:
             if is_error(e, conds):
-                if tries-1 < retries:  # still tries left
+                if tries - 1 < retries:  # still tries left
                     time.sleep(wait)
                     wait *= 2
                     continue
@@ -430,10 +433,10 @@ def core(module):
     ret = {}
 
     host_url = "%s/api/v2/hosts" % api_url
-    headers = { 'headers': {'Content-Type': 'application/json'},
-                'auth':    HTTPBasicAuth(api_user, api_pw),
-                'verify':  ssl_verify,
-    }
+    headers = {'headers': {'Content-Type': 'application/json'},
+               'auth': HTTPBasicAuth(api_user, api_pw),
+               'verify': ssl_verify,
+               }
 
     if state == 'present':
         hostgroup_url = "%s/api/v2/hostgroups" % api_url
@@ -518,23 +521,23 @@ def core(module):
 
 
 def main():
-    module = AnsibleModule(argument_spec=dict(
-        name = dict(required=True),
-        hostgroup = dict(type='str'),
-        image = dict(type='str'),
-        compute_resource = dict(type='str'),
-        subnet = dict(type='str'),
-        environment = dict(type='str'),
-        params = dict(type='dict'),
-        ipv4addr = dict(type='str'),
-        comment = dict(type='str'),
-        state = dict(default='present', choices=['present','absent']),
-        api_url = dict(required=True),
-        api_user = dict(required=True),
-        api_password = dict(no_log=True),
-        api_retries = dict(type='int'),
-        api_errors = dict(type='list'),
-        ssl_verify = dict(),
+    module = AnsibleModule(argument_spec=dict(  # noqa:F405
+        name=dict(required=True),
+        hostgroup=dict(type='str'),
+        image=dict(type='str'),
+        compute_resource=dict(type='str'),
+        subnet=dict(type='str'),
+        environment=dict(type='str'),
+        params=dict(type='dict'),
+        ipv4addr=dict(type='str'),
+        comment=dict(type='str'),
+        state=dict(default='present', choices=['present', 'absent']),
+        api_url=dict(required=True),
+        api_user=dict(required=True),
+        api_password=dict(no_log=True),
+        api_retries=dict(type='int'),
+        api_errors=dict(type='list'),
+        ssl_verify=dict(),
     ))
 
     if not HAS_REQUESTS:
