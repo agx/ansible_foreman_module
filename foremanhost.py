@@ -384,7 +384,7 @@ def is_error(e, conds):
     return False
 
 
-def do_post_retries(url, json, headers, conds, retries=0):
+def do_post_retries(url, jsn, conds, retries=0):
     """
     Retry posts on certain Foreman error numbers
     """
@@ -393,7 +393,7 @@ def do_post_retries(url, json, headers, conds, retries=0):
     while True:
         try:
             tries += 1
-            ret = do_post(url, json, headers)
+            ret = do_post(url, jsn, headers)
             ret['api_tries'] = tries
             return ret
         except requests.exceptions.HTTPError as e:
@@ -403,6 +403,74 @@ def do_post_retries(url, json, headers, conds, retries=0):
                     wait *= 2
                     continue
             raise
+
+
+def maybe_create_host(name, hostgroup, env, ipv4addr, comment, compute_resource, subnetname, image, api_errors, api_retries, module):
+    host_url = "%s/api/v2/hosts" % api_url
+    image_id = None
+    env_id = None
+    subnet = None
+    changed = False
+    hid = None
+    ret = {}
+    facts = {}
+
+    hostgroup_url = "%s/api/v2/hostgroups" % api_url
+    if not hostgroup:
+        raise ValueError("Hostgroup must be given")
+    if not compute_resource:
+        raise ValueError("Compute resource must be given")
+    if not subnetname:
+        raise ValueError("subnet must be given")
+    hostgroup_id = item_to_id(hostgroup_url, 'title', hostgroup)
+    if not hostgroup_id:
+        raise ValueError("Hostgroup '%s' not found for '%s'" % (hostgroup, name))
+    compute_resource_id = find_compute_resource(compute_resource)
+    if image:
+        image_id = find_image(compute_resource_id, image)
+    if env:
+        env_id = find_env(env)
+    subnet = find_subnet(subnetname)
+    interfaces = build_primary_interface(ipv4addr)
+    fulljson = merge_json(name,
+                          hostgroup_id,
+                          image_id,
+                          compute_resource_id,
+                          subnet['id'],
+                          env_id,
+                          interfaces,
+                          comment=comment)
+    try:
+        ret = do_post_retries(host_url, fulljson, api_errors, api_retries)
+        j = json.loads(ret['text'])
+        hid = j['id']
+        facts['foremanhost_ip'] = j['ip']
+        changed = True
+    except requests.exceptions.HTTPError as e:
+        if is_exists(e):
+            hid = item_to_id(host_url, 'name', name)
+        else:
+            try:
+                if 'full_messages' in e.response.json()['error']:
+                    msg = 'Failed to create host %s: %s' % (name, e.response.json()['error']['full_messages'])
+                else:
+                    msg = 'Failed to create host %s: %s' % (name, e.response.json()['error'])
+                module.fail_json(msg=msg)
+            # Catch any failures to get an error message
+            except Exception as f:
+                module.fail_json(
+                    msg='Failed to create host %s: %s (failed to parse detailed error output: %s)' % (name, e, f)
+                )
+
+    if not hid:
+        if not subnet:
+            subnet = find_subnet(subnetname)
+        hid = find_host(name, subnet)
+
+    if not hid:
+        raise ValueError("Host %s not found" % name)
+
+    return ret, hid, changed, facts
 
 
 def core(module):
@@ -425,9 +493,6 @@ def core(module):
     api_retries = module.params.get('api_retries', 0)
     api_errors = module.params.get('api_errors', None)
     ssl_verify = module.params.get('ssl_verify', True)
-    image_id = None
-    env_id = None
-    subnet = None
     changed = False
     facts = {}
     ret = {}
@@ -439,64 +504,19 @@ def core(module):
                }
 
     if state == 'present':
-        hostgroup_url = "%s/api/v2/hostgroups" % api_url
-        if not hostgroup:
-            raise ValueError("Hostgroup must be given")
-        if not compute_resource:
-            raise ValueError("Compute resource must be given")
-        if not subnetname:
-            raise ValueError("subnet must be given")
-        hostgroup_id = item_to_id(hostgroup_url, 'title', hostgroup)
-        if not hostgroup_id:
-            raise ValueError("Hostgroup '%s' not found for '%s'" % (hostgroup, name))
-        compute_resource_id = find_compute_resource(compute_resource)
-        if image:
-            image_id = find_image(compute_resource_id, image)
-        if env:
-            env_id = find_env(env)
-        subnet = find_subnet(subnetname)
-        interfaces = build_primary_interface(ipv4addr)
-        fulljson = merge_json(name,
-                              hostgroup_id,
-                              image_id,
-                              compute_resource_id,
-                              subnet['id'],
-                              env_id,
-                              interfaces,
-                              comment=comment)
-        try:
-            ret = do_post_retries(host_url, fulljson, headers, api_errors, api_retries)
-            j = json.loads(ret['text'])
-            hid = j['id']
-            facts['foremanhost_ip'] = j['ip']
-            changed = True
-        except requests.exceptions.HTTPError as e:
-            if is_exists(e):
-                hid = item_to_id(host_url, 'name', name)
-            else:
-                try:
-                    if 'full_messages' in e.response.json()['error']:
-                        msg = 'Failed to create host %s: %s' % (name, e.response.json()['error']['full_messages'])
-                    else:
-                        msg = 'Failed to create host %s: %s' % (name, e.response.json()['error'])
-                    module.fail_json(msg=msg)
-                # Catch any failures to get an error message
-                except Exception as f:
-                    module.fail_json(
-                        msg='Failed to create host %s: %s (failed to parse detailed error output: %s' % (name, e, f)
-                    )
-
-        if not hid:
-            if not subnet:
-                subnet = find_subnet(subnetname)
-            hid = find_host(name, subnet)
-
-        if not hid:
-            raise ValueError("Host %s not found" % name)
-
+        ret, hid, changed, facts = maybe_create_host(name,
+                                                     hostgroup,
+                                                     env,
+                                                     ipv4addr,
+                                                     comment,
+                                                     compute_resource,
+                                                     subnetname,
+                                                     image,
+                                                     api_errors,
+                                                     api_retries,
+                                                     module)
         if ensure_params(hid, parameters):
             changed = True
-
     elif state == 'absent':
         host_id = item_to_id(host_url, 'name', name)
         if host_id is None:
