@@ -69,8 +69,11 @@ options:
       - List of errors to retry requests for e.g. ['ERF12-1261']
   state:
     description:
-      - state of the machine ('present' or 'absent')
+      - state of the machine ('present', 'absent', 'poweredOn', 'poweredOff')
     required: true
+  power_timeout:
+    description:
+      - max time in seconds to wait for power on/off
   ssl_verify:
     description:
       - Wether to verify SSL certs of the Foreman API
@@ -105,9 +108,11 @@ else:
 
 FOREMAN_FAILED = 1
 FOREMAN_SUCCESS = 0
+POWERSTATES = ['poweredOn', 'poweredOff']
 
 headers = None
 api_url = None
+module = None
 
 
 def build_primary_interface(ipv4addr):
@@ -173,7 +178,6 @@ def do_get(url, params):
 
 
 def do_put(url, data, params):
-    data = None if data is None else json.dumps(data)
     ret = requests.put(url,
                        data=data,
                        **params)
@@ -285,10 +289,39 @@ def find_host(host, subnet):
     return host_id
 
 
-def get_params(hid):
+def get_host_params(hid):
     hostparam_url = "%s/api/v2/hosts/%s/parameters" % (api_url, hid)
     ret = do_get(hostparam_url, headers)
     return json.loads(ret['text'])['results']
+
+
+def get_host_power(hid):
+    host_power_url = "%s/api/v2/hosts/%s/power" % (api_url, hid)
+    ret = do_put(host_power_url, '{"power_action": "status"}', headers)
+    return json.loads(ret['text'])['power']
+
+
+def set_host_power(hid, state):
+    host_power_url = "%s/api/v2/hosts/%s/power" % (api_url, hid)
+    try:
+        ret = do_put(host_power_url, '{"power_action": "%s"}' % state, headers)
+    except requests.exceptions.HTTPError as e:
+        msg = e.response.json().get('error', {}).get('message', None)
+        if msg:
+            module.fail_json(msg=msg)
+        else:
+            raise
+    return json.loads(ret['text'])['power']
+
+
+def wait_host_power(hid, state, timeout):
+    while timeout > 0:
+        timeout -= 2
+        time.sleep(2)
+        cur_state = get_host_power(hid)
+        if cur_state == state:
+            return state
+    return None
 
 
 def param_by_name(name, params):
@@ -343,7 +376,7 @@ def update_param(hid, name, value, foreman_params):
 def ensure_params(hid, parameters):
     """Make sure the params given match the ones tagged onto the
     foreman host"""
-    foreman_params = get_params(hid)
+    foreman_params = get_host_params(hid)
     new = parameters.keys()
     old = [p['name'] for p in foreman_params]
     changed = False
@@ -473,6 +506,28 @@ def maybe_create_host(name, hostgroup, env, ipv4addr, comment, compute_resource,
     return ret, hid, changed, facts
 
 
+def ensure_power_state(hid, state, power_timeout):
+    changed = False
+    # Host is there, make sure power state matches
+    cur_state = get_host_power(hid)
+    if state == 'present':
+        state = 'poweredOn'
+    if cur_state != state:
+        waitfor, action = ('poweredOff', 'stop') if cur_state == 'poweredOn' else ('poweredOn', 'start')
+        if set_host_power(hid, action):
+            new_state = wait_host_power(hid, waitfor, power_timeout)
+            if new_state:
+                ret = new_state
+            else:
+                module.fail_json(
+                    msg="Host did not enter power state %s in %d seconds" % (waitfor, power_timeout)
+                )
+        changed = True
+    else:
+        ret = cur_state
+    return ret, changed
+
+
 def core(module):
     global headers
     global api_url
@@ -493,6 +548,9 @@ def core(module):
     api_retries = module.params.get('api_retries', 0)
     api_errors = module.params.get('api_errors', None)
     ssl_verify = module.params.get('ssl_verify', True)
+    power_timeout = module.params.get('power_timeout') or 60
+
+    hid = None
     changed = False
     facts = {}
     ret = {}
@@ -503,18 +561,22 @@ def core(module):
                'verify': ssl_verify,
                }
 
-    if state == 'present':
-        ret, hid, changed, facts = maybe_create_host(name,
-                                                     hostgroup,
-                                                     env,
-                                                     ipv4addr,
-                                                     comment,
-                                                     compute_resource,
-                                                     subnetname,
-                                                     image,
-                                                     api_errors,
-                                                     api_retries,
-                                                     module)
+    if state in ['present'] + POWERSTATES:
+        hid = item_to_id(host_url, 'name', name)
+        if not hid:
+            ret, hid, changed, facts = maybe_create_host(name,
+                                                         hostgroup,
+                                                         env,
+                                                         ipv4addr,
+                                                         comment,
+                                                         compute_resource,
+                                                         subnetname,
+                                                         image,
+                                                         api_errors,
+                                                         api_retries,
+                                                         module)
+        else:
+            ret['power_state'], changed = ensure_power_state(hid, state, power_timeout)
         if ensure_params(hid, parameters):
             changed = True
     elif state == 'absent':
@@ -541,6 +603,7 @@ def core(module):
 
 
 def main():
+    global module
     module = AnsibleModule(argument_spec=dict(  # noqa:F405
         name=dict(required=True),
         hostgroup=dict(type='str'),
@@ -551,7 +614,8 @@ def main():
         params=dict(type='dict'),
         ipv4addr=dict(type='str'),
         comment=dict(type='str'),
-        state=dict(default='present', choices=['present', 'absent']),
+        state=dict(default='present', choices=['present', 'absent'] + POWERSTATES),
+        power_timeout=dict(type='int'),
         api_url=dict(required=True),
         api_user=dict(required=True),
         api_password=dict(no_log=True),

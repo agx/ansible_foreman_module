@@ -17,6 +17,17 @@
   - debug:
       msg: Got "{{ result }}"
 
+  - name: Shutdown a host in Foreman
+    foremanhost:
+      state: poweredOff
+      name: foobar.example.com
+    register: shutdow_result
+
+  - assert:
+      that:
+        - shutdown_result.changed == false
+        - shutdown_result.power_state == 'poweredOff'
+
   - name: Delete a host in Foreman
     foremanhost:
       name: foobar.example.com
