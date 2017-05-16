@@ -78,7 +78,7 @@ options:
     description:
       - Wether to verify SSL certs of the Foreman API
     required: false
-    default: {}
+    default: True
 author:
     - "Guido Günther"
 '''
@@ -621,7 +621,7 @@ def main():
         api_password=dict(no_log=True),
         api_retries=dict(type='int'),
         api_errors=dict(type='list'),
-        ssl_verify=dict(),
+        ssl_verify=dict(type='bool'),
     ))
 
     if not HAS_REQUESTS:
