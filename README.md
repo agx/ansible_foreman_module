@@ -8,6 +8,10 @@ Usage:
 
 The file [example.yml](./example.yml) has an example.
 
+Running the tests:
+
+    nosetests
+
 [the Foreman]: http://theforeman.org
 [Ansible]: http://ansible.com
 [ansible-module-foreman]: https://github.com/Nosmoht/ansible-module-foreman
