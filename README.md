@@ -12,6 +12,8 @@ Running the tests:
 
     nosetests
 
+[![Build Status](https://travis-ci.org/agx/ansible_foreman_module.svg?branch=master)](https://travis-ci.org/agx/ansible_foreman_module)
+
 [the Foreman]: http://theforeman.org
 [Ansible]: http://ansible.com
 [ansible-module-foreman]: https://github.com/Nosmoht/ansible-module-foreman
