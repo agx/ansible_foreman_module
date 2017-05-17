@@ -119,8 +119,13 @@ def build_primary_interface(ipv4addr):
     """
     Build a Foreman interface definition
 
-    >>> build_primary_interface('127.0.0.1')
-    {'0': {'ip': '127.0.0.1', 'provision': True, 'primary': True}}
+    >>> iface = build_primary_interface('127.0.0.1')
+    >>> iface['0']['ip']
+    '127.0.0.1'
+    >>> iface['0']['provision']
+    True
+    >>> iface['0']['primary']
+    True
     """
     if not ipv4addr:
         return None
@@ -333,15 +338,17 @@ def param_by_name(name, params):
     'fasel'
 
     >>> param_by_name("foo", [{"name":  "bla",
-    ...                        "value": "fasel"}])
+    ...                        "value": "fasel"},
+    ...                       {"name":  "bli",
+    ...                        "value": "bla"}])
     Traceback (most recent call last):
     ...
-    ValueError: No Param with name foo found in [{'name': 'bla', 'value': 'fasel'}]
+    ValueError: No Param with name foo found in ['bla', 'bli']
     """
     for p in params:
         if p['name'] == name:
             return p
-    raise ValueError("No Param with name %s found in %s" % (name, params))
+    raise ValueError("No Param with name %s found in %s" % (name, [n['name'] for n in params]))
 
 
 def add_param(hid, name, value):
