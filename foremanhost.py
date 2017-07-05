@@ -377,7 +377,7 @@ def update_param(hid, name, value, foreman_params):
             "value": value,
         },
     }
-    do_put(hostparam_url, p, headers)
+    do_put(hostparam_url, json.dumps(p), headers)
 
 
 def ensure_params(hid, parameters):
