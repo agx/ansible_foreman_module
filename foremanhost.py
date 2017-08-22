@@ -319,13 +319,14 @@ def set_host_power(hid, state):
     return json.loads(ret['text'])['power']
 
 
-def wait_host_power(hid, state, timeout):
+def wait_host_power(hid, states, timeout):
     while timeout > 0:
         timeout -= 2
         time.sleep(2)
         cur_state = get_host_power(hid)
-        if cur_state == state:
-            return state
+        module.debug("cur_state: %s, want: %s" % (cur_state, states))
+        if cur_state in states:
+            return cur_state
     return None
 
 
@@ -520,14 +521,15 @@ def ensure_power_state(hid, state, power_timeout):
     if state == 'present':
         state = 'poweredOn'
     if cur_state != state:
-        waitfor, action = ('poweredOff', 'stop') if cur_state == 'poweredOn' else ('poweredOn', 'start')
+        waitfor, action = (['poweredOff', 'off'], 'stop') if cur_state in ['poweredOn', 'running'] else (['poweredOn', 'running'], 'start')
+        module.debug("cur_state: %s, waitfor: %s, action: %s" % (cur_state, waitfor, action))
         if set_host_power(hid, action):
             new_state = wait_host_power(hid, waitfor, power_timeout)
             if new_state:
                 ret = new_state
             else:
                 module.fail_json(
-                    msg="Host did not enter power state %s in %d seconds" % (waitfor, power_timeout)
+                    msg="Host did not enter power state %s in %d seconds" % (waitfor[0], power_timeout)
                 )
         changed = True
     else:
