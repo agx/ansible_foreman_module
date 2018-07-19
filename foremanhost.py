@@ -303,11 +303,13 @@ def get_host_params(hid):
 def get_host_power(hid):
     host_power_url = "%s/api/v2/hosts/%s/power" % (api_url, hid)
     ret = do_put(host_power_url, '{"power_action": "status"}', headers)
+    module.debug("Get host power returned %s" % ret)
     return json.loads(ret['text'])['power']
 
 
 def set_host_power(hid, state):
     host_power_url = "%s/api/v2/hosts/%s/power" % (api_url, hid)
+    module.debug("About to set host power to '%s'" % state)
     try:
         ret = do_put(host_power_url, '{"power_action": "%s"}' % state, headers)
     except requests.exceptions.HTTPError as e:
@@ -316,6 +318,7 @@ def set_host_power(hid, state):
             module.fail_json(msg=msg)
         else:
             raise
+    module.debug("Host power setting returned: %s" % ret)
     return json.loads(ret['text'])['power']
 
 
@@ -324,9 +327,8 @@ def wait_host_power(hid, states, timeout):
         timeout -= 2
         time.sleep(2)
         cur_state = get_host_power(hid)
-        module.debug("cur_state: %s, want: %s" % (cur_state, states))
         if cur_state in states:
-            return cur_state
+            return states[0]
     return None
 
 
@@ -516,21 +518,35 @@ def maybe_create_host(name, hostgroup, env, ipv4addr, comment, compute_resource,
 
 def ensure_power_state(hid, state, power_timeout):
     changed = False
+    # Newer Foreman use on/off instead of poweredOn/poweredOff, honor both:
+    on_states = ['poweredOn', 'on']
+    off_states = ['poweredOff', 'off']
     # Host is there, make sure power state matches
     cur_state = get_host_power(hid)
-    if state == 'present':
-        state = 'poweredOn'
+    # Sanitize current state
+    module.debug("Want power state '%s'" % state)
+    if cur_state in on_states + ['present']:  # present means powered on
+        cur_state = on_states[0]
+    elif cur_state in off_states:
+        cur_state = off_states[0]
+    else:
+        module.fail_json(msg="Host is in unknown power state '%s' " % cur_state)
+
     if cur_state != state:
-        waitfor, action = (['poweredOff', 'off'], 'stop') if cur_state in ['poweredOn', 'running'] else (['poweredOn', 'running'], 'start')
-        module.debug("cur_state: %s, waitfor: %s, action: %s" % (cur_state, waitfor, action))
-        if set_host_power(hid, action):
-            new_state = wait_host_power(hid, waitfor, power_timeout)
-            if new_state:
-                ret = new_state
-            else:
-                module.fail_json(
-                    msg="Host did not enter power state %s in %d seconds" % (waitfor[0], power_timeout)
-                )
+        waitfor, action = (off_states, 'off') if cur_state in on_states else (on_states, 'on')
+        set_host_power(hid, action)
+        new_state = wait_host_power(hid, waitfor, power_timeout)
+        if not new_state:
+            module.fail_json(
+                msg="Host did not enter any power state in %s in %d seconds" % (waitfor, power_timeout)
+            )
+        # Sanitize new state
+        if new_state in on_states:
+            ret = on_states[0]
+        elif new_state in off_states:
+            ret = off_states[0]
+        else:
+            module.fail_json(msg="Host is in unknown power state '%s' " % new_state)
         changed = True
     else:
         ret = cur_state
